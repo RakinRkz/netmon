@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light palette. Series colors are validated (CVD + contrast) against the surface. -->
+<resources>
+    <color name="page">#FFF4F4F1</color>
+    <color name="surface">#FFFCFCFB</color>
+    <color name="ink">#FF0B0B0B</color>
+    <color name="ink2">#FF52514E</color>
+    <color name="muted">#FF898781</color>
+    <color name="grid">#FFE1E0D9</color>
+    <color name="axis">#FFC3C2B7</color>
+    <color name="border">#1A0B0B0B</color>
+    <color name="accent">#FF2A78D6</color>
+    <color name="accent_wash">#1F2A78D6</color>
+    <color name="on_accent">#FFFFFFFF</color>
+    <!-- series: download / Wi-Fi = slot 1, upload / mobile = slot 2 -->
+    <color name="series1">#FF2A78D6</color>
+    <color name="series2">#FFEB6834</color>
+    <color name="good">#FF0CA30C</color>
+    <color name="warning">#FFFAB219</color>
+    <color name="critical">#FFD03B3B</color>
+    <color name="tooltip_bg">#F20B0B0B</color>
+    <color name="tooltip_ink">#FFFFFFFF</color>
+</resources>
