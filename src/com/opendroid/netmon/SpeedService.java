@@ -27,10 +27,15 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
     private static final int NOTIF_ID = 1;
     private static final int ALERT_CYCLE_ID = 2;
     private static final int ALERT_DAY_ID = 3;
+    private static final int ALERT_SUMMARY_ID = 4;
+    // Alerts live in their own explicit group (with a summary). Otherwise Android auto-groups them
+    // with the meter, and the status bar then shows the group's app icon instead of the speed.
+    private static final String GROUP_ALERTS = "data_alerts";
     private static final long SYNC_MS = 60_000;
     private static final long MB = 1024L * 1024;
 
     private static SpeedService instance;
+    private static boolean appVisible;
 
     private NotificationManager nm;
     private Notification.Builder builder;
@@ -69,6 +74,20 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
     /** Re-applies settings (units, overlay, lock screen...) to a running service. */
     static void refresh() {
         if (instance != null) instance.applySettings();
+    }
+
+    /** Removes posted limit alerts, e.g. after the limits were changed. */
+    static void clearAlerts(Context c) {
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        nm.cancel(ALERT_CYCLE_ID);
+        nm.cancel(ALERT_DAY_ID);
+        nm.cancel(ALERT_SUMMARY_ID);
+    }
+
+    /** The floating meter steps aside while NetMon itself is on screen. */
+    static void setAppVisible(boolean visible) {
+        appVisible = visible;
+        refresh();
     }
 
     /** Re-creates the floating meter, e.g. after its saved position was reset. */
@@ -158,7 +177,7 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
     }
 
     private void applySettings() {
-        if (Prefs.overlay(this)) overlay.show();
+        if (Prefs.overlay(this) && !appVisible) overlay.show();
         else overlay.hide();
         overlay.update(monitor.down(), monitor.up(), Prefs.useBits(this));
         nm.notify(NOTIF_ID, buildNotification());
@@ -280,9 +299,18 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setAutoCancel(true)
+                .setGroup(GROUP_ALERTS)
                 .setContentIntent(PendingIntent.getActivity(this, id, open, PendingIntent.FLAG_IMMUTABLE))
                 .build();
         nm.notify(id, n);
+        nm.notify(ALERT_SUMMARY_ID, new Notification.Builder(this, CH_ALERTS)
+                .setSmallIcon(R.drawable.ic_warning)
+                .setContentTitle("Mobile data alerts")
+                .setGroup(GROUP_ALERTS)
+                .setGroupSummary(true)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .setAutoCancel(true)
+                .build());
     }
 
     private void updateTile() {

@@ -129,12 +129,14 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        SpeedService.setAppVisible(true);
         page(current).onShow();
     }
 
     @Override
     protected void onPause() {
         resumed = false;
+        SpeedService.setAppVisible(false);
         page(current).onHide();
         super.onPause();
     }

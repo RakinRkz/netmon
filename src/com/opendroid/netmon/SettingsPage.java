@@ -109,6 +109,7 @@ final class SettingsPage extends Page {
             pick("Billing cycle starts", days, Prefs.cycleDay(c) - 1, i -> {
                 Prefs.put(c, Prefs.CYCLE_DAY, i + 1);
                 Prefs.get(c).edit().remove(Prefs.ALERTED_CYCLE).apply();
+                SpeedService.clearAlerts(c);
             });
         }));
         limits.addView(choiceRow("Daily limit", mb(Prefs.dailyLimitMb(c)), () -> limitDialog("Daily limit", Prefs.DAILY_LIMIT_MB)));
@@ -290,6 +291,7 @@ final class SettingsPage extends Page {
         Prefs.put(act, key, mb);
         // A new limit deserves fresh alerts.
         Prefs.get(act).edit().remove(Prefs.ALERTED_CYCLE).remove(Prefs.ALERTED_DAY).apply();
+        SpeedService.clearAlerts(act);
         changed();
     }
 }
