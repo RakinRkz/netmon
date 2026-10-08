@@ -120,17 +120,17 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         if (!othersLeft) nm.cancel(ALERT_SUMMARY_ID);
     }
 
-    /** The floating meter steps aside while NetMon itself is on screen. */
+    /** The floating meter steps aside while NetMon itself is on screen. Runs on every app start/stop, so only the overlay is touched. */
     static void setAppVisible(boolean visible) {
         appVisible = visible;
-        refresh();
+        if (instance != null) instance.updateOverlay();
     }
 
     /** Re-creates the floating meter, e.g. after its saved position was reset. */
     static void restartOverlay() {
         if (instance != null) {
             instance.overlay.hide();
-            instance.applySettings();
+            instance.updateOverlay();
         }
     }
 
@@ -149,6 +149,10 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
                 .setCategory(Notification.CATEGORY_SERVICE)
+                // Android only auto-groups notifications with neither a group nor a sort key
+                // (StatusBarNotification.isAppGroup()); bundled, the status bar shows the app icon, not
+                // the speed. A sort key opts out; a summary-less setGroup() can be force-grouped on 15+.
+                .setSortKey("speed_meter")
                 .setContentIntent(PendingIntent.getActivity(this, 0, open,
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         if (Build.VERSION.SDK_INT >= 31) {
@@ -213,14 +217,20 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
     }
 
     private void applySettings() {
+        updateOverlay();
+        nm.notify(NOTIF_ID, buildNotification());
+        lastSync = 0;  // limits may have changed; re-check on the next tick
+    }
+
+    /** Adds or removes the floating meter per its setting; while NetMon is on screen it's only hidden. */
+    private void updateOverlay() {
         // The floating meter is only "on" while its permission is held; if the permission was
         // revoked, turn the setting off too so it can't silently reappear when re-granted.
         if (Prefs.overlay(this) && !OverlayController.permitted(this)) Prefs.put(this, Prefs.OVERLAY, false);
-        if (Prefs.overlay(this) && !appVisible) overlay.show();
+        overlay.setHidden(appVisible);
+        if (Prefs.overlay(this)) overlay.show();
         else overlay.hide();
         overlay.update(monitor.down(), monitor.up(), Prefs.useBits(this));
-        nm.notify(NOTIF_ID, buildNotification());
-        lastSync = 0;  // limits may have changed; re-check on the next tick
     }
 
     @Override

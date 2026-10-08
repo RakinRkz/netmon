@@ -46,9 +46,15 @@ final class SettingsPage extends Page {
             if (OverlayController.permitted(act)) {
                 Prefs.put(act, Prefs.OVERLAY, true);
                 SpeedService.refresh();
+                overlayOnToast();
             }
         }
         render();
+    }
+
+    /** The floating meter is hidden while NetMon is open, so turning it on shows nothing here by itself. */
+    private void overlayOnToast() {
+        Toast.makeText(act, "Floating meter on. It appears when you leave NetMon.", Toast.LENGTH_LONG).show();
     }
 
     private void changed() {
@@ -95,7 +101,7 @@ final class SettingsPage extends Page {
 
         LinearLayout floating = section("Floating meter");
         floating.addView(switchRow("Floating speed meter",
-                "A small draggable readout over other apps. Tap it to open NetMon.",
+                "A small draggable readout over other apps, hidden while NetMon is open. Tap it to open NetMon.",
                 Prefs.overlay(c) && OverlayController.permitted(c), on -> {
                     if (on && !OverlayController.permitted(c)) {
                         overlayPending = true;
@@ -105,10 +111,14 @@ final class SettingsPage extends Page {
                     }
                     Prefs.put(c, Prefs.OVERLAY, on);
                     if (on && !SpeedService.isRunning()) act.startMeter();
+                    if (on) overlayOnToast();
                 }));
         floating.addView(actionRow("Reset position", "Move the floating meter back to the top-left", () -> {
             OverlayController.resetPosition(c);
             SpeedService.restartOverlay();
+            boolean on = Prefs.overlay(c) && OverlayController.permitted(c);
+            Toast.makeText(c, on ? "Position reset. You'll see it when you leave NetMon." : "Position reset",
+                    Toast.LENGTH_SHORT).show();
         }));
 
         LinearLayout limits = section("Mobile data limits");

@@ -125,20 +125,33 @@ public class MainActivity extends Activity {
         return pages[i];
     }
 
+    // Start/stop, not resume/pause: a dialog-style activity on top (a permission or battery prompt)
+    // only pauses NetMon, which is still on screen, so the floating meter must stay hidden.
+    @Override
+    protected void onStart() {
+        super.onStart();
+        SpeedService.setAppVisible(true);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         resumed = true;
-        SpeedService.setAppVisible(true);
         page(current).onShow();
     }
 
     @Override
     protected void onPause() {
         resumed = false;
-        SpeedService.setAppVisible(false);
         page(current).onHide();
         super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        // A recreation (dark mode, locale) starts again right away; don't flash the meter in between.
+        if (!isChangingConfigurations()) SpeedService.setAppVisible(false);
+        super.onStop();
     }
 
     @Override

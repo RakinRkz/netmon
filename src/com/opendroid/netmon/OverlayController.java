@@ -21,6 +21,7 @@ final class OverlayController {
     private TextView view;
     private WindowManager.LayoutParams lp;
     private String lastText;
+    private boolean hidden;
 
     OverlayController(Context ctx) {
         this.ctx = ctx;
@@ -55,11 +56,31 @@ final class OverlayController {
         lp.x = Prefs.get(ctx).getInt(Prefs.OVERLAY_X, (int) (12 * d));
         lp.y = Prefs.get(ctx).getInt(Prefs.OVERLAY_Y, (int) (120 * d));
         view.setOnTouchListener(new Dragger());
+        applyHidden();
         try {
             wm.addView(view, lp);
         } catch (RuntimeException e) {
             view = null;
         }
+    }
+
+    /** Hides the readout (or brings it back) but keeps its window; hide() removes the window. */
+    void setHidden(boolean hidden) {
+        if (this.hidden == hidden) return;
+        this.hidden = hidden;
+        if (view == null) return;
+        applyHidden();
+        try {
+            wm.updateViewLayout(view, lp);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void applyHidden() {
+        view.setVisibility(hidden ? View.GONE : View.VISIBLE);
+        // Untouchable too while hidden, so the window can never swallow taps meant for the app below.
+        if (hidden) lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        else lp.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
     }
 
     void hide() {
