@@ -114,15 +114,20 @@ final class SettingsPage extends Page {
                         return;
                     }
                     Prefs.put(c, Prefs.OVERLAY, on);
-                    if (on && !SpeedService.isRunning()) act.startMeter();
+                    if (on && !SpeedService.isRunning()) {
+                        act.startMeter();
+                        col.postDelayed(this::render, 300);  // the service starts asynchronously
+                    }
                     if (on) overlayOnToast();
                 }));
         floating.addView(actionRow("Reset position", "Move the floating meter back to the top-left", () -> {
             OverlayController.resetPosition(c);
             SpeedService.restartOverlay();
             boolean on = Prefs.overlay(c) && OverlayController.permitted(c);
-            Toast.makeText(c, on ? "Position reset. You'll see it when you leave NetMon." : "Position reset",
-                    Toast.LENGTH_SHORT).show();
+            String msg = !on ? "Position reset"
+                    : SpeedService.isRunning() ? "Position reset. You'll see it when you leave NetMon."
+                    : "Position reset. Turn on the speed meter to see it.";
+            Toast.makeText(c, msg, Toast.LENGTH_SHORT).show();
         }));
 
         LinearLayout limits = section("Mobile data limits");

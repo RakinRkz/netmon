@@ -126,7 +126,11 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
      */
     static void setAppVisible(boolean visible) {
         appVisible = visible;
-        if (instance != null) instance.updateOverlay();
+        if (instance == null) return;
+        instance.updateOverlay();
+        // Usage access may have just been granted or revoked in Settings: switch the
+        // notification's totals over now rather than at the next minutely sync.
+        if (visible && (instance.todayBase != null) != UsageRepo.hasUsageAccess(instance)) instance.lastSync = 0;
     }
 
     /** Re-creates the floating meter, e.g. after its saved position was reset. */

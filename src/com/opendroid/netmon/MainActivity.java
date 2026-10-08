@@ -127,9 +127,14 @@ public class MainActivity extends Activity {
 
     // Start/stop, not resume/pause: a dialog-style activity on top (a permission or battery prompt)
     // only pauses NetMon, which is still on screen, so the floating meter must stay hidden.
+    // Counted, because a second instance (e.g. opened from the notification over a dialog) starts
+    // before the first one stops.
+    private static int startedCount;
+
     @Override
     protected void onStart() {
         super.onStart();
+        startedCount++;
         SpeedService.setAppVisible(true);
     }
 
@@ -150,7 +155,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         // A recreation (dark mode, locale) starts again right away; don't flash the meter in between.
-        if (!isChangingConfigurations()) SpeedService.setAppVisible(false);
+        startedCount--;
+        if (startedCount == 0 && !isChangingConfigurations()) SpeedService.setAppVisible(false);
         super.onStop();
     }
 
