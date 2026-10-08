@@ -117,9 +117,9 @@ final class SettingsPage extends Page {
             String[] days = new String[28];
             for (int i = 0; i < 28; i++) days[i] = "Day " + (i + 1);
             pick("Billing cycle starts", days, Prefs.cycleDay(c) - 1, i -> {
+                if (i + 1 == Prefs.cycleDay(c)) return;
                 Prefs.put(c, Prefs.CYCLE_DAY, i + 1);
-                Prefs.get(c).edit().remove(Prefs.ALERTED_CYCLE).apply();
-                SpeedService.clearAlerts(c);
+                SpeedService.resetAlerts(c, true, false);  // a new cycle; daily alerts are unaffected
             });
         }));
         limits.addView(choiceRow("Daily limit", mb(Prefs.dailyLimitMb(c)), () -> limitDialog("Daily limit", Prefs.DAILY_LIMIT_MB)));
@@ -130,8 +130,11 @@ final class SettingsPage extends Page {
             if (WARN_LEVELS[i] == Prefs.warnPct(c)) warnIndex = i;
         }
         limits.addView(choiceRow("Warn me at", warnNames[warnIndex], () ->
-                pick("Warn me at", warnNames, java.util.Arrays.binarySearch(WARN_LEVELS, Prefs.warnPct(c)),
-                        i -> Prefs.put(c, Prefs.WARN_PCT, WARN_LEVELS[i]))));
+                pick("Warn me at", warnNames, java.util.Arrays.binarySearch(WARN_LEVELS, Prefs.warnPct(c)), i -> {
+                    if (WARN_LEVELS[i] == Prefs.warnPct(c)) return;
+                    Prefs.put(c, Prefs.WARN_PCT, WARN_LEVELS[i]);
+                    SpeedService.resetWarnings(c);  // a warning given at the old threshold is stale
+                })));
 
         LinearLayout perms = section("Permissions");
         boolean usage = UsageRepo.hasUsageAccess(c);
@@ -298,10 +301,10 @@ final class SettingsPage extends Page {
     }
 
     private void saveLimit(String key, long mb) {
+        if (mb == Prefs.get(act).getLong(key, 0)) return;
         Prefs.put(act, key, mb);
-        // A new limit deserves fresh alerts.
-        Prefs.get(act).edit().remove(Prefs.ALERTED_CYCLE).remove(Prefs.ALERTED_DAY).apply();
-        SpeedService.clearAlerts(act);
+        // A new limit deserves fresh alerts; the other limit's alerts stay as they are.
+        SpeedService.resetAlerts(act, key.equals(Prefs.MONTHLY_LIMIT_MB), key.equals(Prefs.DAILY_LIMIT_MB));
         changed();
     }
 }

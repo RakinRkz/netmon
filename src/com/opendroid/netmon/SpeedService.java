@@ -10,11 +10,13 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.service.notification.StatusBarNotification;
 import android.service.quicksettings.TileService;
 
 /**
@@ -77,12 +79,45 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         if (instance != null) instance.applySettings();
     }
 
-    /** Removes posted limit alerts, e.g. after the limits were changed. */
-    static void clearAlerts(Context c) {
+    /**
+     * Forgets the chosen alerts (monthly cycle and/or daily) and removes them if posted, so they
+     * fire afresh, e.g. after that limit or the billing day changed. The other kind is untouched.
+     */
+    static void resetAlerts(Context c, boolean cycle, boolean day) {
+        SharedPreferences.Editor e = Prefs.get(c).edit();
+        if (cycle) e.remove(Prefs.ALERTED_CYCLE);
+        if (day) e.remove(Prefs.ALERTED_DAY);
+        e.apply();
+        cancelAlerts(c, cycle, day);
+    }
+
+    /**
+     * After the warning threshold changed: forgets warnings so they fire at the new threshold.
+     * "Limit reached" alerts stay, as the limits themselves didn't change.
+     */
+    static void resetWarnings(Context c) {
+        SharedPreferences p = Prefs.get(c);
+        resetAlerts(c, alertedLevel(p.getString(Prefs.ALERTED_CYCLE, "")) == 1,
+                alertedLevel(p.getString(Prefs.ALERTED_DAY, "")) == 1);
+    }
+
+    /** The level in an ALERTED_* marker "periodStart:level": 1 warned, 2 limit reached, 0 none. */
+    private static int alertedLevel(String marker) {
+        int i = marker.indexOf(':');
+        return i < 0 ? 0 : Integer.parseInt(marker.substring(i + 1));
+    }
+
+    private static void cancelAlerts(Context c, boolean cycle, boolean day) {
         NotificationManager nm = c.getSystemService(NotificationManager.class);
-        nm.cancel(ALERT_CYCLE_ID);
-        nm.cancel(ALERT_DAY_ID);
-        nm.cancel(ALERT_SUMMARY_ID);
+        // Cancelling the summary also removes its group's alerts, so keep it while another alert
+        // remains. Check before cancelling: cancel() is applied asynchronously.
+        boolean othersLeft = false;
+        for (StatusBarNotification n : nm.getActiveNotifications()) {
+            if ((n.getId() == ALERT_CYCLE_ID && !cycle) || (n.getId() == ALERT_DAY_ID && !day)) othersLeft = true;
+        }
+        if (cycle) nm.cancel(ALERT_CYCLE_ID);
+        if (day) nm.cancel(ALERT_DAY_ID);
+        if (!othersLeft) nm.cancel(ALERT_SUMMARY_ID);
     }
 
     /** The floating meter steps aside while NetMon itself is on screen. */
@@ -244,12 +279,12 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         final long rx = SpeedMonitor.rx(), tx = SpeedMonitor.tx();
         final long mrx = SpeedMonitor.mobileRx(), mtx = SpeedMonitor.mobileTx();
         final long day = UsageRepo.startOfDay(lastSync);
-        final int cycleDay = Prefs.cycleDay(c);
+        final long cycleStart = UsageRepo.cycleStart(lastSync, Prefs.cycleDay(c));
         UsageRepo.async(() -> {
             long now = System.currentTimeMillis();
             UsageRepo.Usage[] r = new UsageRepo.Usage[2];
             if (UsageRepo.hasUsageAccess(c)) r[0] = UsageRepo.query(c, day, now);
-            if (Prefs.monthlyLimitMb(c) > 0) r[1] = UsageRepo.query(c, UsageRepo.cycleStart(now, cycleDay), now);
+            if (Prefs.monthlyLimitMb(c) > 0) r[1] = UsageRepo.query(c, cycleStart, now);
             return r;
         }, r -> {
             syncing = false;
@@ -264,17 +299,23 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
             } else {
                 todayBase = null;
             }
-            checkLimits(r[1], today().mobile());
+            checkLimits(cycleStart, r[1], today().mobile());
         });
     }
 
-    private void checkLimits(UsageRepo.Usage cycle, long todayMobile) {
+    /** Alerts on the limits; {@code cycle} is the mobile usage since {@code cycleStart}, as queried. */
+    private void checkLimits(long cycleStart, UsageRepo.Usage cycle, long todayMobile) {
         int warn = Prefs.warnPct(this);
         long monthly = Prefs.monthlyLimitMb(this) * MB;
         if (monthly > 0 && cycle != null) {
-            long start = UsageRepo.cycleStart(System.currentTimeMillis(), Prefs.cycleDay(this));
-            alertIfNeeded(Prefs.ALERTED_CYCLE, start, cycle.mobile(), monthly, warn, ALERT_CYCLE_ID,
-                    "this billing cycle (since " + Fmt.shortDate(start) + ")", "Monthly");
+            if (cycleStart != UsageRepo.cycleStart(System.currentTimeMillis(), Prefs.cycleDay(this))) {
+                // The billing day changed (or a new cycle began) during the query: this usage
+                // belongs to another cycle, so don't record it against the current one. Re-sync.
+                lastSync = 0;
+            } else {
+                alertIfNeeded(Prefs.ALERTED_CYCLE, cycleStart, cycle.mobile(), monthly, warn, ALERT_CYCLE_ID,
+                        "this billing cycle (since " + Fmt.shortDate(cycleStart) + ")", "Monthly");
+            }
         }
         long daily = Prefs.dailyLimitMb(this) * MB;
         if (daily > 0) {
@@ -289,8 +330,7 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         int level = used >= limit ? 2 : used * 100 >= limit * warnPct ? 1 : 0;
         if (level == 0) return;
         String stored = Prefs.get(this).getString(key, "");
-        int alerted = 0;
-        if (stored.startsWith(period + ":")) alerted = Integer.parseInt(stored.substring(stored.indexOf(':') + 1));
+        int alerted = stored.startsWith(period + ":") ? alertedLevel(stored) : 0;
         if (level <= alerted) return;
         Prefs.put(this, key, period + ":" + level);
 
