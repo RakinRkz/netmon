@@ -8,6 +8,7 @@ final class Prefs {
     static final String ENABLED = "enabled";
     static final String START_ON_BOOT = "start_on_boot";
     static final String USE_BITS = "use_bits";
+    static final String SPEED_ICON = "speed_icon";
     static final String ICON_MODE = "icon_mode";
     static final String LOCK_SCREEN = "lock_screen";
     static final String SCREEN_OFF_UPDATES = "screen_off_updates";
@@ -33,6 +34,8 @@ final class Prefs {
     static boolean enabled(Context c) { return get(c).getBoolean(ENABLED, true); }
     static boolean startOnBoot(Context c) { return get(c).getBoolean(START_ON_BOOT, true); }
     static boolean useBits(Context c) { return get(c).getBoolean(USE_BITS, false); }
+    /** Status bar icon shows the live speed (true) or a plain NetMon glyph (false). */
+    static boolean speedIcon(Context c) { return get(c).getBoolean(SPEED_ICON, true); }
     static int iconMode(Context c) { return get(c).getInt(ICON_MODE, ICON_TOTAL); }
     static boolean lockScreen(Context c) { return get(c).getBoolean(LOCK_SCREEN, true); }
     static boolean screenOffUpdates(Context c) { return get(c).getBoolean(SCREEN_OFF_UPDATES, false); }

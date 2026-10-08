@@ -62,14 +62,24 @@ final class SettingsPage extends Page {
         col.addView(Ui.title(c, "Settings"), Ui.matchWrap(c, 8));
 
         LinearLayout meter = section("Status bar meter");
-        meter.addView(switchRow("Speed meter", "Live speed in the status bar and notification",
+        meter.addView(switchRow("Speed meter", "Notification with live speed and today's usage",
                 SpeedService.isRunning(), on -> {
                     if (on) act.startMeter();
                     else act.stopMeter();
                     col.postDelayed(this::render, 300);
                 }));
-        meter.addView(choiceRow("Status bar shows", ICON_MODES[Prefs.iconMode(c)], () ->
-                pick("Status bar shows", ICON_MODES, Prefs.iconMode(c), i -> Prefs.put(c, Prefs.ICON_MODE, i))));
+        meter.addView(switchRow("Show speed in status bar", "The notification icon shows the live speed. Off shows a plain NetMon icon.",
+                Prefs.speedIcon(c), on -> {
+                    Prefs.put(c, Prefs.SPEED_ICON, on);
+                    col.post(this::render);  // enables/disables "Status bar shows"
+                }));
+        View iconMode = choiceRow("Status bar shows", ICON_MODES[Prefs.iconMode(c)], () ->
+                pick("Status bar shows", ICON_MODES, Prefs.iconMode(c), i -> Prefs.put(c, Prefs.ICON_MODE, i)));
+        if (!Prefs.speedIcon(c)) {
+            iconMode.setEnabled(false);
+            iconMode.setAlpha(0.4f);
+        }
+        meter.addView(iconMode);
         meter.addView(choiceRow("Units", UNITS[Prefs.useBits(c) ? 1 : 0], () ->
                 pick("Units", UNITS, Prefs.useBits(c) ? 1 : 0, i -> Prefs.put(c, Prefs.USE_BITS, i == 1))));
         meter.addView(switchRow("Show on lock screen", "Speed and today's usage stay visible when locked",

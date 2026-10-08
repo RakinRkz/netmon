@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
+import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -177,6 +178,9 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
     }
 
     private void applySettings() {
+        // The floating meter is only "on" while its permission is held; if the permission was
+        // revoked, turn the setting off too so it can't silently reappear when re-granted.
+        if (Prefs.overlay(this) && !OverlayController.permitted(this)) Prefs.put(this, Prefs.OVERLAY, false);
         if (Prefs.overlay(this) && !appVisible) overlay.show();
         else overlay.hide();
         overlay.update(monitor.down(), monitor.up(), Prefs.useBits(this));
@@ -198,7 +202,9 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         int mode = Prefs.iconMode(this);
         double iconSpeed = mode == Prefs.ICON_DOWNLOAD ? down : mode == Prefs.ICON_UPLOAD ? up : down + up;
         UsageRepo.Usage t = today();
-        builder.setSmallIcon(StatusIcon.make(iconSpeed, bits))
+        builder.setSmallIcon(Prefs.speedIcon(this)
+                        ? StatusIcon.make(iconSpeed, bits)
+                        : Icon.createWithResource(this, R.drawable.ic_speed))
                 .setContentTitle("↓ " + Fmt.speed(down, bits) + "    ↑ " + Fmt.speed(up, bits))
                 .setContentText("Today  ·  Mobile " + Fmt.bytes(t.mobile()) + "  ·  Wi-Fi " + Fmt.bytes(t.wifi()))
                 .setSubText(monitor.networkName())
