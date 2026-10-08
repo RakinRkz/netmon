@@ -120,7 +120,10 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         if (!othersLeft) nm.cancel(ALERT_SUMMARY_ID);
     }
 
-    /** The floating meter steps aside while NetMon itself is on screen. Runs on every app start/stop, so only the overlay is touched. */
+    /**
+     * The floating meter steps aside while NetMon itself is on screen. Runs on every app
+     * start/stop, so it touches only the overlay.
+     */
     static void setAppVisible(boolean visible) {
         appVisible = visible;
         if (instance != null) instance.updateOverlay();

@@ -45,6 +45,10 @@ final class SettingsPage extends Page {
             overlayPending = false;
             if (OverlayController.permitted(act)) {
                 Prefs.put(act, Prefs.OVERLAY, true);
+                if (!SpeedService.isRunning()) {
+                    act.startMeter();  // the floating meter is drawn by the service
+                    col.postDelayed(this::render, 300);  // the service starts asynchronously
+                }
                 SpeedService.refresh();
                 overlayOnToast();
             }
