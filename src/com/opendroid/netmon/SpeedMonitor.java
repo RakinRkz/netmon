@@ -2,20 +2,31 @@ package com.opendroid.netmon;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.TrafficStats;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Process-wide 1 Hz sampler of the device's traffic counters. It runs only while at least one
+ * Process-wide 1 Hz sampler of the device's internet traffic. It runs only while at least one
  * listener (the service, a visible screen, the Quick Settings tile) is attached; all callbacks
  * happen on the main thread.
+ *
+ * Only the interfaces of internet networks are counted (mobile, Wi-Fi client, Ethernet), not the
+ * device-wide total: that also counts the hotspot side of tethered traffic (each byte twice, once
+ * per interface) and VPN tunnels on top of the network carrying them.
  */
 final class SpeedMonitor {
     interface Listener {
@@ -39,8 +50,17 @@ final class SpeedMonitor {
     private boolean running;
     private long nextTickAt;
 
-    private long lastTime, lastRx, lastTx;
+    private long lastTime;
     private long stoppedAt;
+
+    // Interface of each internet network. The default request asks for INTERNET and NOT_VPN, which
+    // leaves out VPNs and local-only networks such as the hotspot. Registered for the life of the
+    // process so the set is current whenever sampling resumes.
+    private final Map<Network, String> upstream = new HashMap<>();
+    private final Map<String, long[]> lastIface = new HashMap<>();
+    private long lastTotalRx = -1, lastTotalTx = -1, lastMobileRx = -1, lastMobileTx = -1;
+    /** Running totals since the process started: internet traffic, and its mobile share. */
+    private long cumRx, cumTx, cumMobileRx, cumMobileTx;
 
     /** Current speeds in bytes per second. */
     private double down, up;
@@ -78,9 +98,26 @@ final class SpeedMonitor {
         }
     };
 
+    private final ConnectivityManager.NetworkCallback upstreamCallback = new ConnectivityManager.NetworkCallback() {
+        @Override
+        public void onLinkPropertiesChanged(Network network, LinkProperties lp) {
+            if (lp.getInterfaceName() != null) upstream.put(network, lp.getInterfaceName());
+            else upstream.remove(network);
+        }
+
+        @Override
+        public void onLost(Network network) {
+            upstream.remove(network);
+        }
+    };
+
     private SpeedMonitor(Context app) {
         this.app = app;
         cm = app.getSystemService(ConnectivityManager.class);
+        try {
+            cm.registerNetworkCallback(new NetworkRequest.Builder().build(), upstreamCallback, handler);
+        } catch (RuntimeException ignored) {
+        }
     }
 
     void addListener(Listener l) {
@@ -103,9 +140,9 @@ final class SpeedMonitor {
             histCount = 0;
         }
         if (sessionStart == 0) resetSession();
+        // Traffic while paused goes into the totals but not into the speed or the session.
+        collect();
         lastTime = now;
-        lastRx = rx();
-        lastTx = tx();
         down = up = 0;
         try {
             networkName = describe(cm.getNetworkCapabilities(cm.getActiveNetwork()));
@@ -135,16 +172,12 @@ final class SpeedMonitor {
 
     private void sample() {
         long now = SystemClock.elapsedRealtime();
-        long rx = rx(), tx = tx();
+        long[] d = collect();
+        long drx = d[0], dtx = d[1];
         long dt = Math.max(1, now - lastTime);
-        // Counters can go backwards when an interface is torn down; treat that as no traffic.
-        long drx = Math.max(0, rx - lastRx);
-        long dtx = Math.max(0, tx - lastTx);
         down = drx * 1000.0 / dt;
         up = dtx * 1000.0 / dt;
         lastTime = now;
-        lastRx = rx;
-        lastTx = tx;
 
         sessionRx += drx;
         sessionTx += dtx;
@@ -161,8 +194,6 @@ final class SpeedMonitor {
             histDown[HISTORY - 1] = (float) down;
             histUp[HISTORY - 1] = (float) up;
         }
-
-        SelfTracker.onCounters(app, rx, tx, mobileRx(), mobileTx());
 
         for (Listener l : new ArrayList<>(listeners)) l.onTick(this);
     }
@@ -183,10 +214,60 @@ final class SpeedMonitor {
         return histCount;
     }
 
-    static long rx() { return Math.max(0, TrafficStats.getTotalRxBytes()); }
-    static long tx() { return Math.max(0, TrafficStats.getTotalTxBytes()); }
-    static long mobileRx() { return Math.max(0, TrafficStats.getMobileRxBytes()); }
-    static long mobileTx() { return Math.max(0, TrafficStats.getMobileTxBytes()); }
+    long cumRx() { return cumRx; }
+    long cumTx() { return cumTx; }
+    long cumMobileRx() { return cumMobileRx; }
+    long cumMobileTx() { return cumMobileTx; }
+
+    /**
+     * Reads the counters and returns the internet traffic {rx, tx} since the last read, adding it
+     * (and its mobile and Wi-Fi shares) to the running totals and the self-tracked history.
+     * Counters can go backwards when an interface is torn down; that counts as no traffic.
+     */
+    private long[] collect() {
+        long drx = 0, dtx = 0;
+        if (Build.VERSION.SDK_INT >= 31) {
+            Set<String> seen = new HashSet<>();
+            for (String iface : upstream.values()) {
+                if (!seen.add(iface)) continue;
+                long rx = Math.max(0, TrafficStats.getRxBytes(iface)), tx = Math.max(0, TrafficStats.getTxBytes(iface));
+                long[] last = lastIface.get(iface);
+                if (last != null) {
+                    drx += Math.max(0, rx - last[0]);
+                    dtx += Math.max(0, tx - last[1]);
+                }
+                lastIface.put(iface, new long[] {rx, tx});
+            }
+            // Forget interfaces that stopped being internet ones: the same name can come back as
+            // the hotspot (e.g. wlan0), and its counters then must not count when it returns.
+            lastIface.keySet().retainAll(seen);
+        } else {
+            // No per-interface counters before Android 12: fall back to the device-wide total.
+            long rx = Math.max(0, TrafficStats.getTotalRxBytes()), tx = Math.max(0, TrafficStats.getTotalTxBytes());
+            if (lastTotalRx >= 0) {
+                drx = Math.max(0, rx - lastTotalRx);
+                dtx = Math.max(0, tx - lastTotalTx);
+            }
+            lastTotalRx = rx;
+            lastTotalTx = tx;
+        }
+        long mrx = Math.max(0, TrafficStats.getMobileRxBytes()), mtx = Math.max(0, TrafficStats.getMobileTxBytes());
+        long dmrx = lastMobileRx < 0 ? 0 : Math.max(0, mrx - lastMobileRx);
+        long dmtx = lastMobileTx < 0 ? 0 : Math.max(0, mtx - lastMobileTx);
+        lastMobileRx = mrx;
+        lastMobileTx = mtx;
+        // Mobile traffic is internet traffic; this also covers the moment before the network
+        // callback has reported the mobile interface.
+        drx = Math.max(drx, dmrx);
+        dtx = Math.max(dtx, dmtx);
+
+        cumRx += drx;
+        cumTx += dtx;
+        cumMobileRx += dmrx;
+        cumMobileTx += dmtx;
+        SelfTracker.add(app, dmrx, dmtx, drx - dmrx, dtx - dmtx);
+        return new long[] {drx, dtx};
+    }
 
     private static String describe(NetworkCapabilities caps) {
         if (caps == null) return "Offline";

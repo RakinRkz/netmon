@@ -1,5 +1,11 @@
 build/
+*.apk
+*.aab
+*.idsig
 *.jks
 *.keystore
+keystore.properties
+local.properties
+.claude/
 .idea/
 .vscode/

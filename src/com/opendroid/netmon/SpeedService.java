@@ -278,12 +278,12 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         }
         UsageRepo.Usage u = new UsageRepo.Usage();
         u.add(todayBase);
-        long dmrx = Math.max(0, SpeedMonitor.mobileRx() - baseMRx);
-        long dmtx = Math.max(0, SpeedMonitor.mobileTx() - baseMTx);
+        long dmrx = Math.max(0, monitor.cumMobileRx() - baseMRx);
+        long dmtx = Math.max(0, monitor.cumMobileTx() - baseMTx);
         u.mobileRx += dmrx;
         u.mobileTx += dmtx;
-        u.wifiRx += Math.max(0, SpeedMonitor.rx() - baseRx - dmrx);
-        u.wifiTx += Math.max(0, SpeedMonitor.tx() - baseTx - dmtx);
+        u.wifiRx += Math.max(0, monitor.cumRx() - baseRx - dmrx);
+        u.wifiTx += Math.max(0, monitor.cumTx() - baseTx - dmtx);
         return u;
     }
 
@@ -293,8 +293,8 @@ public class SpeedService extends Service implements SpeedMonitor.Listener {
         syncing = true;
         lastSync = System.currentTimeMillis();
         final Context c = getApplicationContext();
-        final long rx = SpeedMonitor.rx(), tx = SpeedMonitor.tx();
-        final long mrx = SpeedMonitor.mobileRx(), mtx = SpeedMonitor.mobileTx();
+        final long rx = monitor.cumRx(), tx = monitor.cumTx();
+        final long mrx = monitor.cumMobileRx(), mtx = monitor.cumMobileTx();
         final long day = UsageRepo.startOfDay(lastSync);
         final long cycleStart = UsageRepo.cycleStart(lastSync, Prefs.cycleDay(c));
         UsageRepo.async(() -> {
